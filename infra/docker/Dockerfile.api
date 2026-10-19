@@ -1,0 +1,31 @@
+# Stage 1: Build & Publish
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /app
+
+# Copy solution and project files first for optimal docker layer caching
+COPY MultiVendorPlatform.sln .
+COPY src/Api/MultiVendorPlatform.Api.csproj src/Api/
+COPY tests/MultiVendorPlatform.UnitTests/MultiVendorPlatform.UnitTests.csproj tests/MultiVendorPlatform.UnitTests/
+COPY tests/MultiVendorPlatform.IntegrationTests/MultiVendorPlatform.IntegrationTests.csproj tests/MultiVendorPlatform.IntegrationTests/
+
+RUN dotnet restore MultiVendorPlatform.sln
+
+# Copy remaining source code and build
+COPY . .
+WORKDIR /app/src/Api
+RUN dotnet publish MultiVendorPlatform.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+# Stage 2: Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+WORKDIR /app
+
+# Run as non-privileged app user for container security
+USER $APP_UID
+
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "MultiVendorPlatform.Api.dll"]

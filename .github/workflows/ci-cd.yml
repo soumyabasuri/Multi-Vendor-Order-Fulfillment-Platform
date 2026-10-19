@@ -1,0 +1,75 @@
+name: Multi-Vendor Platform CI/CD
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    name: Build & Run Test Suites
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: multivendor_test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 8 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Restore Backend Dependencies
+      run: dotnet restore MultiVendorPlatform.sln
+
+    - name: Build Backend Solution
+      run: dotnet build MultiVendorPlatform.sln --configuration Release --no-restore
+
+    - name: Run Unit Tests
+      run: dotnet test tests/MultiVendorPlatform.UnitTests/MultiVendorPlatform.UnitTests.csproj --configuration Release --no-build --verbosity normal
+
+    - name: Run Integration & Concurrency Tests
+      run: dotnet test tests/MultiVendorPlatform.IntegrationTests/MultiVendorPlatform.IntegrationTests.csproj --configuration Release --no-build --verbosity normal
+
+    - name: Build Frontend
+      working-directory: ./frontend
+      run: |
+        npm ci
+        npm run build -- --configuration production
+
+    - name: Build Docker API Image
+      run: docker build -t multivendor-api:latest -f infra/docker/Dockerfile.api .
+
+    - name: Build Docker Frontend Image
+      run: docker build -t multivendor-frontend:latest -f infra/docker/Dockerfile.frontend .
