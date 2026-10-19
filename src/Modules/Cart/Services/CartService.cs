@@ -3,6 +3,7 @@ using MultiVendorPlatform.Infrastructure.Data;
 using MultiVendorPlatform.Modules.Cart.Domain;
 using MultiVendorPlatform.Modules.Cart.DTOs;
 using MultiVendorPlatform.Modules.Common.Results;
+using CartEntity = MultiVendorPlatform.Modules.Cart.Domain.Cart;
 
 namespace MultiVendorPlatform.Modules.Cart.Services;
 
@@ -170,7 +171,7 @@ public class CartService : ICartService
         return Result.Success();
     }
 
-    private async Task<Cart> GetOrCreateCartAsync(Guid customerId, CancellationToken ct)
+    private async Task<CartEntity> GetOrCreateCartAsync(Guid customerId, CancellationToken ct)
     {
         var cart = await _dbContext.Carts
             .Include(c => c.Items)
@@ -182,7 +183,7 @@ public class CartService : ICartService
 
         if (cart == null)
         {
-            cart = new Cart { CustomerId = customerId };
+            cart = new CartEntity { CustomerId = customerId };
             _dbContext.Carts.Add(cart);
             await _dbContext.SaveChangesAsync(ct);
         }
@@ -190,7 +191,7 @@ public class CartService : ICartService
         return cart;
     }
 
-    private async Task<CartDto> MapToDtoAsync(Cart cart, CancellationToken ct)
+    private async Task<CartDto> MapToDtoAsync(CartEntity cart, CancellationToken ct)
     {
         var productIds = cart.Items.Select(i => i.ProductId).ToList();
         var inventories = await _dbContext.Inventories
