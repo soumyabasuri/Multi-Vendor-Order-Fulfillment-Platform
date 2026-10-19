@@ -25,11 +25,6 @@ public static class OpenTelemetryExtensions
                         opts.RecordException = true;
                     })
                     .AddHttpClientInstrumentation();
-
-                if (configuration.GetValue<bool>("OpenTelemetry:ConsoleExporter", false))
-                {
-                    tracing.AddConsoleExporter();
-                }
             });
 
         return services;
