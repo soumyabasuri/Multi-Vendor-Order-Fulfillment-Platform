@@ -152,6 +152,30 @@ public class KafkaConsumerBackgroundService : BackgroundService
             config.SaslPassword = saslPassword;
         }
 
+        var certLocation = configuration["Kafka:SslCertificateLocation"];
+        if (!string.IsNullOrWhiteSpace(certLocation))
+        {
+            config.SslCertificateLocation = certLocation;
+        }
+
+        var certPem = configuration["Kafka:SslCertificatePem"];
+        if (!string.IsNullOrWhiteSpace(certPem))
+        {
+            config.SslCertificatePem = certPem;
+        }
+
+        var keyLocation = configuration["Kafka:SslKeyLocation"];
+        if (!string.IsNullOrWhiteSpace(keyLocation))
+        {
+            config.SslKeyLocation = keyLocation;
+        }
+
+        var keyPem = configuration["Kafka:SslKeyPem"];
+        if (!string.IsNullOrWhiteSpace(keyPem))
+        {
+            config.SslKeyPem = keyPem;
+        }
+
         var caLocation = configuration["Kafka:SslCaLocation"];
         if (!string.IsNullOrWhiteSpace(caLocation))
         {
