@@ -125,6 +125,31 @@ public class KafkaProducer : IKafkaProducer, IDisposable
         {
             config.SaslPassword = saslPassword;
         }
+
+        var caLocation = configuration["Kafka:SslCaLocation"];
+        if (!string.IsNullOrWhiteSpace(caLocation))
+        {
+            config.SslCaLocation = caLocation;
+        }
+
+        var caPem = configuration["Kafka:SslCaPem"];
+        if (!string.IsNullOrWhiteSpace(caPem))
+        {
+            config.SslCaPem = caPem;
+        }
+
+        var enableSslVerificationStr = configuration["Kafka:EnableSslCertificateVerification"];
+        if (bool.TryParse(enableSslVerificationStr, out var enableSsl))
+        {
+            config.EnableSslCertificateVerification = enableSsl;
+        }
+        else if (bootstrapServers.Contains("aivencloud.com"))
+        {
+            if (string.IsNullOrWhiteSpace(caLocation) && string.IsNullOrWhiteSpace(caPem))
+            {
+                config.EnableSslCertificateVerification = false;
+            }
+        }
     }
 
     public void Dispose()

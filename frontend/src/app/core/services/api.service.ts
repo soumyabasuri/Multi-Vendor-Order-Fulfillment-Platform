@@ -7,7 +7,7 @@ import { ApiResponse } from '../models/models';
   providedIn: 'root'
 })
 export class ApiService {
-  private readonly baseUrl = 'http://localhost:5001/api';
+  private readonly baseUrl = 'https://multi-vendor-order-fulfillment-platform.onrender.com/api';
 
   constructor(private http: HttpClient) {}
 
