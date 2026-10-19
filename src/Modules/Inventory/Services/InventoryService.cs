@@ -49,7 +49,8 @@ public class InventoryService : IInventoryService
 
     public async Task<Result<InventoryDto>> AdjustStockAsync(AdjustStockRequest request, CancellationToken ct = default)
     {
-        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
 
         var inventory = await _dbContext.Inventories
             .FirstOrDefaultAsync(i => i.ProductId == request.ProductId && i.ProductVariantId == request.ProductVariantId, ct);
@@ -75,7 +76,7 @@ public class InventoryService : IInventoryService
         inventory.UpdatedAtUtc = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        if (isOuterTx && tx != null) await tx.CommitAsync(ct);
 
         await _cacheService.RemoveAsync(CacheKeys.ProductById(request.ProductId), ct);
 
@@ -99,7 +100,8 @@ public class InventoryService : IInventoryService
             .ToList();
 
         // Use PostgreSQL SELECT ... FOR UPDATE or atomic updates inside transaction
-        await using var tx = await _dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct);
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct) : null;
 
         try
         {
@@ -107,18 +109,29 @@ public class InventoryService : IInventoryService
             {
                 if (item.Quantity <= 0)
                 {
-                    await tx.RollbackAsync(ct);
+                    if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
                     return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Validation("Inventory.InvalidQuantity", "Reserved quantity must be greater than zero."));
                 }
 
                 // Query with EF Core or raw SQL for pessimistic row-level lock
-                var inventory = await _dbContext.Inventories
-                    .FromSqlInterpolated($"SELECT * FROM inventories WHERE \"ProductId\" = {item.ProductId} AND (\"ProductVariantId\" = {item.ProductVariantId} OR (\"ProductVariantId\" IS NULL AND {item.ProductVariantId} IS NULL)) FOR UPDATE")
-                    .FirstOrDefaultAsync(ct);
+                MultiVendorPlatform.Modules.Inventory.Domain.Inventory? inventory;
+                if (item.ProductVariantId.HasValue)
+                {
+                    var variantId = item.ProductVariantId.Value;
+                    inventory = await _dbContext.Inventories
+                        .FromSqlInterpolated($"SELECT * FROM inventories WHERE \"ProductId\" = {item.ProductId} AND \"ProductVariantId\" = {variantId} FOR UPDATE")
+                        .FirstOrDefaultAsync(ct);
+                }
+                else
+                {
+                    inventory = await _dbContext.Inventories
+                        .FromSqlInterpolated($"SELECT * FROM inventories WHERE \"ProductId\" = {item.ProductId} AND \"ProductVariantId\" IS NULL FOR UPDATE")
+                        .FirstOrDefaultAsync(ct);
+                }
 
                 if (inventory == null)
                 {
-                    await tx.RollbackAsync(ct);
+                    if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
                     return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.NotFound("Inventory.NotFound", $"Inventory not found for product {item.ProductId}."));
                 }
 
@@ -127,7 +140,7 @@ public class InventoryService : IInventoryService
                 {
                     _logger.LogWarning("Insufficient stock for Product {ProductId}. Available: {Available}, Requested: {Requested}",
                         item.ProductId, inventory.AvailableQuantity, item.Quantity);
-                    await tx.RollbackAsync(ct);
+                    if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
                     return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Conflict("Inventory.InsufficientStock",
                         $"Insufficient stock for product {item.ProductId}. Available: {inventory.AvailableQuantity}, Requested: {item.Quantity}"));
                 }
@@ -152,7 +165,7 @@ public class InventoryService : IInventoryService
             }
 
             await _dbContext.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            if (isOuterTx && tx != null) await tx.CommitAsync(ct);
 
             // Invalidate cached product details
             foreach (var item in sortedItems)
@@ -165,7 +178,7 @@ public class InventoryService : IInventoryService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception while reserving inventory for Order {OrderId}", orderId);
-            await tx.RollbackAsync(ct);
+            if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
             throw;
         }
     }
@@ -189,25 +202,37 @@ public class InventoryService : IInventoryService
             .ThenBy(i => i.ProductVariantId ?? Guid.Empty)
             .ToList();
 
-        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
         try
         {
             foreach (var item in sortedItems)
             {
                 if (item.Quantity <= 0)
                 {
-                    await tx.RollbackAsync(ct);
+                    if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
                     return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Validation("Inventory.InvalidQuantity", "Quantity must be > 0."));
                 }
 
                 // Execute atomic update conditioned on sufficient available stock
-                var rowsAffected = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-                    $"UPDATE inventories SET \"ReservedQuantity\" = \"ReservedQuantity\" + {item.Quantity}, \"UpdatedAtUtc\" = {DateTime.UtcNow} WHERE \"ProductId\" = {item.ProductId} AND (\"ProductVariantId\" = {item.ProductVariantId} OR (\"ProductVariantId\" IS NULL AND {item.ProductVariantId} IS NULL)) AND (\"Quantity\" - \"ReservedQuantity\") >= {item.Quantity}", ct);
+                int rowsAffected;
+                var now = DateTime.UtcNow;
+                if (item.ProductVariantId.HasValue)
+                {
+                    var variantId = item.ProductVariantId.Value;
+                    rowsAffected = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                        $"UPDATE inventories SET \"ReservedQuantity\" = \"ReservedQuantity\" + {item.Quantity}, \"UpdatedAtUtc\" = {now} WHERE \"ProductId\" = {item.ProductId} AND \"ProductVariantId\" = {variantId} AND (\"Quantity\" - \"ReservedQuantity\") >= {item.Quantity}", ct);
+                }
+                else
+                {
+                    rowsAffected = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                        $"UPDATE inventories SET \"ReservedQuantity\" = \"ReservedQuantity\" + {item.Quantity}, \"UpdatedAtUtc\" = {now} WHERE \"ProductId\" = {item.ProductId} AND \"ProductVariantId\" IS NULL AND (\"Quantity\" - \"ReservedQuantity\") >= {item.Quantity}", ct);
+                }
 
                 if (rowsAffected == 0)
                 {
                     _logger.LogWarning("Atomic reservation failed for Product {ProductId}. Stock depleted or insufficient.", item.ProductId);
-                    await tx.RollbackAsync(ct);
+                    if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
                     return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Conflict("Inventory.InsufficientStock",
                         $"Insufficient stock for product {item.ProductId}. Could not reserve {item.Quantity} units."));
                 }
@@ -232,7 +257,7 @@ public class InventoryService : IInventoryService
             }
 
             await _dbContext.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            if (isOuterTx && tx != null) await tx.CommitAsync(ct);
 
             foreach (var item in sortedItems)
             {
@@ -244,14 +269,15 @@ public class InventoryService : IInventoryService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Atomic reservation failed for Order {OrderId}", orderId);
-            await tx.RollbackAsync(ct);
+            if (isOuterTx && tx != null) await tx.RollbackAsync(ct);
             throw;
         }
     }
 
     public async Task<Result> ReleaseReservationAsync(Guid orderId, CancellationToken ct = default)
     {
-        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
 
         var reservations = await _dbContext.InventoryReservations
             .Include(r => r.Inventory)
@@ -276,7 +302,7 @@ public class InventoryService : IInventoryService
         }
 
         await _dbContext.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        if (isOuterTx && tx != null) await tx.CommitAsync(ct);
 
         foreach (var res in reservations)
         {
@@ -288,7 +314,8 @@ public class InventoryService : IInventoryService
 
     public async Task<Result> CommitReservationAsync(Guid orderId, CancellationToken ct = default)
     {
-        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        var isOuterTx = _dbContext.Database.CurrentTransaction == null;
+        await using var tx = isOuterTx ? await _dbContext.Database.BeginTransactionAsync(ct) : null;
 
         var reservations = await _dbContext.InventoryReservations
             .Include(r => r.Inventory)
@@ -315,7 +342,7 @@ public class InventoryService : IInventoryService
         }
 
         await _dbContext.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        if (isOuterTx && tx != null) await tx.CommitAsync(ct);
 
         foreach (var res in reservations)
         {

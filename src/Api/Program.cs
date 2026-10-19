@@ -59,7 +59,6 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql =>
     {
         npgsql.MigrationsAssembly("MultiVendorPlatform.Api");
-        npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null);
     });
 });
 

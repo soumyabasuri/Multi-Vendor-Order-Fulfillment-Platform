@@ -1,6 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
-import { tap } from 'rxjs';
+import { Observable, tap, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import { AuthResponse, UserDto } from '../models/models';
 
@@ -26,6 +26,17 @@ export class AuthService {
 
   register(data: any) {
     return this.api.post<AuthResponse>('auth/register', data).pipe(
+      tap(res => this.setSession(res))
+    );
+  }
+
+  refreshToken(): Observable<AuthResponse> {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      return throwError(() => new Error('No refresh token stored.'));
+    }
+
+    return this.api.post<AuthResponse>('auth/refresh-token', { refreshToken }).pipe(
       tap(res => this.setSession(res))
     );
   }

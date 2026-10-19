@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ProductDto, CategoryDto, PagedResult } from '../../../core/models/models';
@@ -124,6 +124,7 @@ import { ProductDto, CategoryDto, PagedResult } from '../../../core/models/model
 export class ProductListComponent implements OnInit {
   private api = inject(ApiService);
   private auth = inject(AuthService);
+  private router = inject(Router);
 
   products: ProductDto[] = [];
   categories: CategoryDto[] = [];
@@ -169,6 +170,7 @@ export class ProductListComponent implements OnInit {
   addToCart(product: ProductDto) {
     if (!this.auth.isAuthenticated()) {
       alert('Please sign in to add items to your cart.');
+      this.router.navigate(['/login']);
       return;
     }
 
@@ -183,7 +185,12 @@ export class ProductListComponent implements OnInit {
       },
       error: (err) => {
         this.addingProductId = null;
-        alert(err?.error?.errorMessage || 'Failed to add item to cart.');
+        if (err?.status === 401) {
+          alert('Your session has expired. Please sign in again.');
+          this.auth.logout();
+        } else {
+          alert(err?.error?.errorMessage || 'Failed to add item to cart.');
+        }
       }
     });
   }

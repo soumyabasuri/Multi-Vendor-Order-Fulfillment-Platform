@@ -19,10 +19,8 @@ import { AuthService } from '../../core/services/auth.service';
           <a routerLink="/products" routerLinkActive="active" class="nav-item">Browse Catalog</a>
 
           <ng-container *ngIf="auth.isAuthenticated()">
-            <ng-container *ngIf="auth.isCustomer()">
-              <a routerLink="/cart" routerLinkActive="active" class="nav-item">Cart</a>
-              <a routerLink="/my-orders" routerLinkActive="active" class="nav-item">My Orders</a>
-            </ng-container>
+            <a routerLink="/cart" routerLinkActive="active" class="nav-item">Cart</a>
+            <a routerLink="/my-orders" routerLinkActive="active" class="nav-item">My Orders</a>
 
             <ng-container *ngIf="auth.isVendor()">
               <a routerLink="/vendor/dashboard" routerLinkActive="active" class="nav-item">Vendor Hub</a>
