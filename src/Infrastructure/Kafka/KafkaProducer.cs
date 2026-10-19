@@ -14,14 +14,23 @@ public interface IKafkaProducer
 
 public class KafkaProducer : IKafkaProducer, IDisposable
 {
-    private readonly IProducer<string, string> _producer;
+    private readonly IProducer<string, string>? _producer;
     private readonly ILogger<KafkaProducer> _logger;
+    private readonly bool _isEnabled;
 
     public KafkaProducer(IConfiguration configuration, ILogger<KafkaProducer> logger)
     {
         _logger = logger;
-        var bootstrapServers = configuration["Kafka:BootstrapServers"] ?? "localhost:9092";
+        var bootstrapServers = configuration["Kafka:BootstrapServers"];
+        if (string.IsNullOrWhiteSpace(bootstrapServers) || bootstrapServers.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Kafka:BootstrapServers is not configured or disabled. Kafka publishing is disabled.");
+            _isEnabled = false;
+            _producer = null;
+            return;
+        }
 
+        _isEnabled = true;
         var config = new ProducerConfig
         {
             BootstrapServers = bootstrapServers,
@@ -47,6 +56,12 @@ public class KafkaProducer : IKafkaProducer, IDisposable
 
     public async Task PublishRawAsync(string topic, string key, string payloadJson, string? correlationId = null, CancellationToken ct = default)
     {
+        if (!_isEnabled || _producer == null)
+        {
+            _logger.LogDebug("Kafka is disabled or not configured. Skipping message publish to {Topic}", topic);
+            return;
+        }
+
         try
         {
             var kafkaMessage = new Message<string, string>
@@ -76,7 +91,7 @@ public class KafkaProducer : IKafkaProducer, IDisposable
 
     public void Dispose()
     {
-        _producer.Flush(TimeSpan.FromSeconds(5));
-        _producer.Dispose();
+        _producer?.Flush(TimeSpan.FromSeconds(5));
+        _producer?.Dispose();
     }
 }

@@ -35,7 +35,13 @@ public class KafkaConsumerBackgroundService : BackgroundService
 
     private void StartConsumerLoop(CancellationToken stoppingToken)
     {
-        var bootstrapServers = _configuration["Kafka:BootstrapServers"] ?? "localhost:9092";
+        var bootstrapServers = _configuration["Kafka:BootstrapServers"];
+        if (string.IsNullOrWhiteSpace(bootstrapServers) || bootstrapServers.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Kafka:BootstrapServers is not configured or disabled. Kafka consumer will not start.");
+            return;
+        }
+
         var groupId = _configuration["Kafka:GroupId"] ?? "multivendor-order-fulfillment-group";
 
         var config = new ConsumerConfig
