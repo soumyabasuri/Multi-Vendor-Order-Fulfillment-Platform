@@ -9,6 +9,12 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
+  <!-- Include Infrastructure and Modules into the API project -->
+  <ItemGroup>
+    <Compile Include="../Infrastructure/**/*.cs" Link="Infrastructure/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Modules/**/*.cs" Link="Modules/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Entity Framework Core & PostgreSQL -->
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />

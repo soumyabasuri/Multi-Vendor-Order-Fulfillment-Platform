@@ -2,18 +2,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
-# Copy solution and project files first for optimal docker layer caching
-COPY MultiVendorPlatform.sln .
-COPY src/Api/MultiVendorPlatform.Api.csproj src/Api/
-COPY tests/MultiVendorPlatform.UnitTests/MultiVendorPlatform.UnitTests.csproj tests/MultiVendorPlatform.UnitTests/
-COPY tests/MultiVendorPlatform.IntegrationTests/MultiVendorPlatform.IntegrationTests.csproj tests/MultiVendorPlatform.IntegrationTests/
+# Copy full repository source to ensure all modules and infrastructure are available
+COPY . .
 
+# Restore all dependencies across solution
 RUN dotnet restore MultiVendorPlatform.sln
 
-# Copy remaining source code and build
-COPY . .
-WORKDIR /app/src/Api
-RUN dotnet publish MultiVendorPlatform.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+# Publish API in Release mode
+RUN dotnet publish src/Api/MultiVendorPlatform.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 # Stage 2: Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime

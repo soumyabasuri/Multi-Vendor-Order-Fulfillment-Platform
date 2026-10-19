@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/.vscode
+**/.idea
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.angular
+.DS_Store
