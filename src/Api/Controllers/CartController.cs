@@ -7,7 +7,7 @@ using MultiVendorPlatform.Modules.Identity.Domain;
 
 namespace MultiVendorPlatform.Api.Controllers;
 
-[Authorize(Roles = Role.Customer)]
+[Authorize]
 public class CartController : BaseApiController
 {
     private readonly ICartService _cartService;

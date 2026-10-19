@@ -168,7 +168,7 @@ export class ProductListComponent implements OnInit {
 
   addToCart(product: ProductDto) {
     if (!this.auth.isAuthenticated()) {
-      alert('Please sign in as a customer to add items to your cart.');
+      alert('Please sign in to add items to your cart.');
       return;
     }
 

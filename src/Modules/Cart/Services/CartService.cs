@@ -96,13 +96,22 @@ public class CartService : ICartService
                 Quantity = request.Quantity,
                 UnitPrice = price
             };
-            cart.Items.Add(item);
+            _dbContext.CartItems.Add(item);
         }
 
         cart.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 
-        return Result.Success(await MapToDtoAsync(cart, ct));
+        var freshCart = await _dbContext.Carts
+            .AsNoTracking()
+            .Include(c => c.Items)
+            .ThenInclude(i => i.Product)
+            .ThenInclude(p => p.Vendor)
+            .Include(c => c.Items)
+            .ThenInclude(i => i.ProductVariant)
+            .FirstAsync(c => c.Id == cart.Id, ct);
+
+        return Result.Success(await MapToDtoAsync(freshCart, ct));
     }
 
     public async Task<Result<CartDto>> UpdateItemQuantityAsync(Guid customerId, Guid cartItemId, int quantity, CancellationToken ct = default)
@@ -116,7 +125,7 @@ public class CartService : ICartService
 
         if (quantity <= 0)
         {
-            cart.Items.Remove(item);
+            _dbContext.CartItems.Remove(item);
         }
         else
         {
@@ -137,7 +146,16 @@ public class CartService : ICartService
         cart.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 
-        return Result.Success(await MapToDtoAsync(cart, ct));
+        var freshCart = await _dbContext.Carts
+            .AsNoTracking()
+            .Include(c => c.Items)
+            .ThenInclude(i => i.Product)
+            .ThenInclude(p => p.Vendor)
+            .Include(c => c.Items)
+            .ThenInclude(i => i.ProductVariant)
+            .FirstAsync(c => c.Id == cart.Id, ct);
+
+        return Result.Success(await MapToDtoAsync(freshCart, ct));
     }
 
     public async Task<Result<CartDto>> RemoveItemAsync(Guid customerId, Guid cartItemId, CancellationToken ct = default)
@@ -149,11 +167,20 @@ public class CartService : ICartService
             return Result.Failure<CartDto>(Error.NotFound("CartItem.NotFound", "Item not found in cart."));
         }
 
-        cart.Items.Remove(item);
+        _dbContext.CartItems.Remove(item);
         cart.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 
-        return Result.Success(await MapToDtoAsync(cart, ct));
+        var freshCart = await _dbContext.Carts
+            .AsNoTracking()
+            .Include(c => c.Items)
+            .ThenInclude(i => i.Product)
+            .ThenInclude(p => p.Vendor)
+            .Include(c => c.Items)
+            .ThenInclude(i => i.ProductVariant)
+            .FirstAsync(c => c.Id == cart.Id, ct);
+
+        return Result.Success(await MapToDtoAsync(freshCart, ct));
     }
 
     public async Task<Result> ClearCartAsync(Guid customerId, CancellationToken ct = default)

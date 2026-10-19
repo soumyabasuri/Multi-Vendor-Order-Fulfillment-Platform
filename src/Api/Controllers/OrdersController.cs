@@ -20,7 +20,7 @@ public class OrdersController : BaseApiController
 
     [HttpPost]
     [Idempotent]
-    [Authorize(Roles = Role.Customer)]
+    [Authorize]
     [ProducesResponseType(typeof(OrderDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -48,7 +48,7 @@ public class OrdersController : BaseApiController
     }
 
     [HttpGet("my-orders")]
-    [Authorize(Roles = Role.Customer)]
+    [Authorize]
     [ProducesResponseType(typeof(PagedResult<OrderSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMyOrders([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
     {
