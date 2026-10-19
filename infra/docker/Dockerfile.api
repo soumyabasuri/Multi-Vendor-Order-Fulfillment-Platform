@@ -11,9 +11,13 @@ RUN dotnet restore MultiVendorPlatform.sln
 # Publish API in Release mode
 RUN dotnet publish src/Api/MultiVendorPlatform.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-# Stage 2: Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+# Stage 2: Runtime image (Debian-based for native librdkafka compatibility)
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
+
+# Install curl for healthcheck
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Run as non-privileged app user for container security
 USER $APP_UID
@@ -21,7 +25,7 @@ USER $APP_UID
 COPY --from=build /app/publish .
 
 ENV ASPNETCORE_URLS=http://+:8080
-ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_ENVIRONMENT=Development
 
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "MultiVendorPlatform.Api.dll"]

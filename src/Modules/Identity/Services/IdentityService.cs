@@ -104,7 +104,7 @@ public class IdentityService : IIdentityService
         var (accessToken, expiresAtUtc) = _jwtTokenService.GenerateAccessToken(user, roles);
 
         var refreshToken = _jwtTokenService.GenerateRefreshToken(user.Id, ipAddress);
-        user.RefreshTokens.Add(refreshToken);
+        _dbContext.RefreshTokens.Add(refreshToken);
 
         await _dbContext.SaveChangesAsync(ct);
 
@@ -158,7 +158,7 @@ public class IdentityService : IIdentityService
         refreshToken.RevokedByIp = ipAddress;
         refreshToken.ReplacedByToken = newRefreshToken.Token;
 
-        user.RefreshTokens.Add(newRefreshToken);
+        _dbContext.RefreshTokens.Add(newRefreshToken);
         await _dbContext.SaveChangesAsync(ct);
 
         var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();

@@ -100,7 +100,8 @@ export class RegisterComponent {
       },
       error: (err) => {
         this.loading = false;
-        alert(err?.error?.errorMessage || 'Registration failed.');
+        const msg = err?.error?.errorMessage || err?.error?.title || err?.message || 'Registration failed.';
+        alert(msg);
       }
     });
   }

@@ -27,6 +27,13 @@ using MultiVendorPlatform.Modules.Notifications.Services;
 using MultiVendorPlatform.Modules.Orders.Services;
 using MultiVendorPlatform.Modules.Payments.Services;
 using MultiVendorPlatform.Modules.Vendors.Services;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using MultiVendorPlatform.Modules.Catalog.Domain;
+using MultiVendorPlatform.Modules.Identity.Domain;
+using Role = MultiVendorPlatform.Modules.Identity.Domain.Role;
+using MultiVendorPlatform.Modules.Inventory.Domain;
+using MultiVendorPlatform.Modules.Vendors.Domain;
 using Serilog;
 using StackExchange.Redis;
 
@@ -157,7 +164,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "http://localhost:8080")
+        policy.SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -258,15 +265,128 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions
 // 15. Automatic Database Initialization & Seeding on Startup
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var services = scope.ServiceProvider;
+    var db = services.GetRequiredService<ApplicationDbContext>();
+    var passwordHasher = services.GetRequiredService<IPasswordHasher>();
     try
     {
-        await db.Database.EnsureCreatedAsync();
-        Log.Information("Database schema ensured successfully.");
+        var creator = db.Database.GetService<IRelationalDatabaseCreator>();
+        if (!await creator.HasTablesAsync())
+        {
+            await creator.CreateTablesAsync();
+            Log.Information("Database schema tables created successfully.");
+        }
+
+        // 1. Ensure default roles exist
+        if (!await db.Roles.AnyAsync())
+        {
+            db.Roles.AddRange(
+                new Role { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), Name = Role.Customer, NormalizedName = "CUSTOMER", Description = "Marketplace Customer" },
+                new Role { Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), Name = Role.Vendor, NormalizedName = "VENDOR", Description = "Vendor Seller" },
+                new Role { Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), Name = Role.Admin, NormalizedName = "ADMIN", Description = "System Administrator" },
+                new Role { Id = Guid.Parse("44444444-4444-4444-4444-444444444444"), Name = Role.Warehouse, NormalizedName = "WAREHOUSE", Description = "Warehouse Operations" }
+            );
+            await db.SaveChangesAsync();
+            Log.Information("Default roles seeded successfully.");
+        }
+
+        // 2. Ensure default admin user exists
+        if (!await db.Users.AnyAsync(u => u.NormalizedEmail == "ADMIN@PLATFORM.COM"))
+        {
+            var adminUser = new User
+            {
+                Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                Email = "admin@platform.com",
+                NormalizedEmail = "ADMIN@PLATFORM.COM",
+                FirstName = "System",
+                LastName = "Admin",
+                PasswordHash = passwordHasher.HashPassword("Admin@123456"),
+                IsActive = true
+            };
+            var adminRole = await db.Roles.FirstAsync(r => r.NormalizedName == "ADMIN");
+            adminUser.UserRoles.Add(new UserRole { UserId = adminUser.Id, RoleId = adminRole.Id });
+            db.Users.Add(adminUser);
+            await db.SaveChangesAsync();
+            Log.Information("Default admin user (admin@platform.com / Admin@123456) seeded.");
+        }
+
+        // 3. Ensure demo vendor & categories exist for immediate testing
+        if (!await db.Categories.AnyAsync())
+        {
+            var electronics = new Category { Id = Guid.NewGuid(), Name = "Electronics", Slug = "electronics", Description = "Gadgets & Hardware" };
+            var apparel = new Category { Id = Guid.NewGuid(), Name = "Apparel", Slug = "apparel", Description = "Clothing & Accessories" };
+            db.Categories.AddRange(electronics, apparel);
+            await db.SaveChangesAsync();
+
+            var vendorUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "vendor@apex.com",
+                NormalizedEmail = "VENDOR@APEX.COM",
+                FirstName = "Apex",
+                LastName = "Merchant",
+                PasswordHash = passwordHasher.HashPassword("Vendor@123456"),
+                IsActive = true
+            };
+            var vendorRole = await db.Roles.FirstAsync(r => r.NormalizedName == "VENDOR");
+            vendorUser.UserRoles.Add(new UserRole { UserId = vendorUser.Id, RoleId = vendorRole.Id });
+            db.Users.Add(vendorUser);
+            await db.SaveChangesAsync();
+
+            var vendor = new Vendor
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = vendorUser.Id,
+                BusinessName = "Apex Tech Global",
+                Slug = "apex-tech-global",
+                ContactEmail = "contact@apextech.com",
+                Status = VendorStatus.Approved,
+                CommissionRate = 0.1000m
+            };
+            db.Vendors.Add(vendor);
+            await db.SaveChangesAsync();
+
+            vendorUser.VendorId = vendor.Id;
+            await db.SaveChangesAsync();
+
+            var p1 = new Product
+            {
+                Id = Guid.NewGuid(),
+                VendorId = vendor.Id,
+                CategoryId = electronics.Id,
+                Name = "Noise-Cancelling Wireless Headphones",
+                Slug = "noise-cancelling-wireless-headphones",
+                Description = "Premium high-fidelity audio with active noise cancellation and 40h battery.",
+                Sku = "APX-NCWH-001",
+                BasePrice = 199.99m,
+                IsActive = true
+            };
+            var p2 = new Product
+            {
+                Id = Guid.NewGuid(),
+                VendorId = vendor.Id,
+                CategoryId = electronics.Id,
+                Name = "Ultra-Fast Mechanical Keyboard",
+                Slug = "ultra-fast-mechanical-keyboard",
+                Description = "Custom mechanical keyboard with hot-swappable tactile switches.",
+                Sku = "APX-MECH-002",
+                BasePrice = 129.50m,
+                IsActive = true
+            };
+            db.Products.AddRange(p1, p2);
+            await db.SaveChangesAsync();
+
+            db.Inventories.AddRange(
+                new Inventory { Id = Guid.NewGuid(), ProductId = p1.Id, Quantity = 100, ReservedQuantity = 0, ReorderThreshold = 10 },
+                new Inventory { Id = Guid.NewGuid(), ProductId = p2.Id, Quantity = 50, ReservedQuantity = 0, ReorderThreshold = 5 }
+            );
+            await db.SaveChangesAsync();
+            Log.Information("Demo categories, vendor, products, and inventories seeded successfully.");
+        }
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Failed to initialize database on startup.");
+        Log.Error(ex, "Failed to initialize or seed database on startup.");
     }
 }
 

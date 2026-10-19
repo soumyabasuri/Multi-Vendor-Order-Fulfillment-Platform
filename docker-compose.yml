@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   postgres:
@@ -100,7 +99,7 @@ services:
       Kafka__BootstrapServers: kafka:29092
       Jwt__Secret: A_Very_Strong_And_Ultra_Secure_Production_Grade_Secret_Key_At_Least_32_Bytes_Long!
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health/live || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/live || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

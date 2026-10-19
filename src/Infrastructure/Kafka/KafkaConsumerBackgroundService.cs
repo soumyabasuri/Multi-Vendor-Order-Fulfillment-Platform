@@ -101,6 +101,7 @@ public class KafkaConsumerBackgroundService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in Kafka consumer loop.");
+                try { Task.Delay(2000, stoppingToken).Wait(stoppingToken); } catch { }
             }
         }
 
