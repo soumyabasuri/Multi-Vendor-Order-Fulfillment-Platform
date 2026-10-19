@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MultiVendorPlatform.Infrastructure.Idempotency;
 using MultiVendorPlatform.Modules.Common.Models;
 using MultiVendorPlatform.Modules.Identity.Domain;
 using MultiVendorPlatform.Modules.Orders.DTOs;
@@ -18,6 +19,7 @@ public class OrdersController : BaseApiController
     }
 
     [HttpPost]
+    [Idempotent]
     [Authorize(Roles = Role.Customer)]
     [ProducesResponseType(typeof(OrderDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

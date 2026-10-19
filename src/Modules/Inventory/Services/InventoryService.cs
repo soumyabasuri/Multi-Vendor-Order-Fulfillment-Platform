@@ -12,6 +12,7 @@ public interface IInventoryService
     Task<Result<InventoryDto>> GetInventoryAsync(Guid productId, Guid? variantId = null, CancellationToken ct = default);
     Task<Result<InventoryDto>> AdjustStockAsync(AdjustStockRequest request, CancellationToken ct = default);
     Task<Result<IReadOnlyList<InventoryReservation>>> ReserveInventoryAsync(Guid orderId, IEnumerable<ReserveStockItem> items, TimeSpan? reservationTtl = null, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<InventoryReservation>>> ReserveInventoryAtomicAsync(Guid orderId, IEnumerable<ReserveStockItem> items, TimeSpan? reservationTtl = null, CancellationToken ct = default);
     Task<Result> ReleaseReservationAsync(Guid orderId, CancellationToken ct = default);
     Task<Result> CommitReservationAsync(Guid orderId, CancellationToken ct = default);
 }
@@ -164,6 +165,85 @@ public class InventoryService : IInventoryService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception while reserving inventory for Order {OrderId}", orderId);
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Concurrency Strategy 2: Atomic conditional SQL UPDATE.
+    /// Does not require pessimistic row locks; relies on atomic UPDATE ... WHERE (Quantity - ReservedQuantity >= @qty)
+    /// </summary>
+    public async Task<Result<IReadOnlyList<InventoryReservation>>> ReserveInventoryAtomicAsync(
+        Guid orderId,
+        IEnumerable<ReserveStockItem> items,
+        TimeSpan? reservationTtl = null,
+        CancellationToken ct = default)
+    {
+        var ttl = reservationTtl ?? TimeSpan.FromMinutes(15);
+        var expiresAtUtc = DateTime.UtcNow.Add(ttl);
+        var reservations = new List<InventoryReservation>();
+
+        var sortedItems = items
+            .OrderBy(i => i.ProductId)
+            .ThenBy(i => i.ProductVariantId ?? Guid.Empty)
+            .ToList();
+
+        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        try
+        {
+            foreach (var item in sortedItems)
+            {
+                if (item.Quantity <= 0)
+                {
+                    await tx.RollbackAsync(ct);
+                    return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Validation("Inventory.InvalidQuantity", "Quantity must be > 0."));
+                }
+
+                // Execute atomic update conditioned on sufficient available stock
+                var rowsAffected = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE inventories SET \"ReservedQuantity\" = \"ReservedQuantity\" + {item.Quantity}, \"UpdatedAtUtc\" = {DateTime.UtcNow} WHERE \"ProductId\" = {item.ProductId} AND (\"ProductVariantId\" = {item.ProductVariantId} OR (\"ProductVariantId\" IS NULL AND {item.ProductVariantId} IS NULL)) AND (\"Quantity\" - \"ReservedQuantity\") >= {item.Quantity}", ct);
+
+                if (rowsAffected == 0)
+                {
+                    _logger.LogWarning("Atomic reservation failed for Product {ProductId}. Stock depleted or insufficient.", item.ProductId);
+                    await tx.RollbackAsync(ct);
+                    return Result.Failure<IReadOnlyList<InventoryReservation>>(Error.Conflict("Inventory.InsufficientStock",
+                        $"Insufficient stock for product {item.ProductId}. Could not reserve {item.Quantity} units."));
+                }
+
+                var inv = await _dbContext.Inventories
+                    .AsNoTracking()
+                    .FirstAsync(i => i.ProductId == item.ProductId && i.ProductVariantId == item.ProductVariantId, ct);
+
+                var reservation = new InventoryReservation
+                {
+                    InventoryId = inv.Id,
+                    OrderId = orderId,
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Quantity = item.Quantity,
+                    Status = ReservationStatus.Reserved,
+                    ExpiresAtUtc = expiresAtUtc
+                };
+
+                _dbContext.InventoryReservations.Add(reservation);
+                reservations.Add(reservation);
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            foreach (var item in sortedItems)
+            {
+                await _cacheService.RemoveAsync(CacheKeys.ProductById(item.ProductId), ct);
+            }
+
+            return Result.Success<IReadOnlyList<InventoryReservation>>(reservations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Atomic reservation failed for Order {OrderId}", orderId);
             await tx.RollbackAsync(ct);
             throw;
         }
