@@ -15,7 +15,7 @@ export const options = {
   },
 };
 
-const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:5000/api';
+const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:5001/api';
 
 export default function () {
   const headers = {

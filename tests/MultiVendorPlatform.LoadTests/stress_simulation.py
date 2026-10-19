@@ -17,7 +17,7 @@ except ImportError:
     print("aiohttp not installed. Run: pip install aiohttp")
     sys.exit(0)
 
-BASE_URL = "http://localhost:5000/api"
+BASE_URL = "http://localhost:5001/api"
 
 async def place_order(session, user_idx, product_id):
     order_id = str(uuid.uuid4())

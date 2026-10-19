@@ -408,7 +408,7 @@ docker compose up --build
 | Service | URL | Credentials / Notes |
 | :--- | :--- | :--- |
 | **Angular Frontend** | [http://localhost:4200](http://localhost:4200) | Customer / Vendor / Admin dashboards |
-| **ASP.NET Core Web API** | [http://localhost:5000](http://localhost:5000) | Swagger UI available at `/` |
+| **ASP.NET Core Web API** | [http://localhost:5001](http://localhost:5001) | Swagger UI available at `/` |
 | **Kafka UI** | [http://localhost:8085](http://localhost:8085) | Visual topic & consumer group inspection |
 | **PostgreSQL** | `localhost:5432` | user: `postgres`, password: `postgrespassword`, db: `multivendor_db` |
 | **Redis** | `localhost:6379` | Standard Redis protocol |
