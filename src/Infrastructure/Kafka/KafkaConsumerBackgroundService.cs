@@ -53,6 +53,8 @@ public class KafkaConsumerBackgroundService : BackgroundService
             EnablePartitionEof = false
         };
 
+        ApplyCloudSecuritySettings(config, _configuration, bootstrapServers);
+
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
 
         var topics = new[]
@@ -113,6 +115,42 @@ public class KafkaConsumerBackgroundService : BackgroundService
 
         consumer.Close();
         _logger.LogInformation("Kafka consumer shut down gracefully.");
+    }
+
+    private static void ApplyCloudSecuritySettings(ClientConfig config, IConfiguration configuration, string bootstrapServers)
+    {
+        var securityProtocolStr = configuration["Kafka:SecurityProtocol"];
+        if (Enum.TryParse<SecurityProtocol>(securityProtocolStr, true, out var secProto))
+        {
+            config.SecurityProtocol = secProto;
+        }
+        else if (bootstrapServers.Contains("aivencloud.com") || bootstrapServers.Contains("confluent.cloud"))
+        {
+            var hasSasl = !string.IsNullOrWhiteSpace(configuration["Kafka:SaslUsername"]);
+            config.SecurityProtocol = hasSasl ? SecurityProtocol.SaslSsl : SecurityProtocol.Ssl;
+        }
+
+        var saslMechStr = configuration["Kafka:SaslMechanism"];
+        if (Enum.TryParse<SaslMechanism>(saslMechStr, true, out var saslMech))
+        {
+            config.SaslMechanism = saslMech;
+        }
+        else if (config.SecurityProtocol is SecurityProtocol.SaslPlaintext or SecurityProtocol.SaslSsl)
+        {
+            config.SaslMechanism = SaslMechanism.ScramSha256;
+        }
+
+        var saslUsername = configuration["Kafka:SaslUsername"];
+        if (!string.IsNullOrWhiteSpace(saslUsername))
+        {
+            config.SaslUsername = saslUsername;
+        }
+
+        var saslPassword = configuration["Kafka:SaslPassword"];
+        if (!string.IsNullOrWhiteSpace(saslPassword))
+        {
+            config.SaslPassword = saslPassword;
+        }
     }
 }
 
