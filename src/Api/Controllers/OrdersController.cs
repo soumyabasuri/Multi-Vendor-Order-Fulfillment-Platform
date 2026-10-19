@@ -67,7 +67,7 @@ public class OrdersController : BaseApiController
         var vendorIdClaim = User.FindFirstValue("vendorId");
         if (!Guid.TryParse(vendorIdClaim, out var vendorId))
         {
-            return Forbid("User is not associated with a vendor profile.");
+            return Forbidden("User is not associated with a vendor profile.");
         }
 
         var result = await _orderService.GetVendorOrdersAsync(vendorId, pageNumber, pageSize, ct);

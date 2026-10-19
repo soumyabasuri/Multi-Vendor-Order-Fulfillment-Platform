@@ -92,7 +92,32 @@ public class VendorService : IVendorService
 
     public async Task<Result<VendorDto>> GetVendorByOwnerIdAsync(Guid ownerUserId, CancellationToken ct = default)
     {
-        var vendor = await _dbContext.Vendors.AsNoTracking().FirstOrDefaultAsync(v => v.OwnerUserId == ownerUserId, ct);
+        var vendor = await _dbContext.Vendors.FirstOrDefaultAsync(v => v.OwnerUserId == ownerUserId, ct);
+        if (vendor == null)
+        {
+            var user = await _dbContext.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Id == ownerUserId, ct);
+
+            if (user != null && user.UserRoles.Any(ur => ur.Role.Name == Role.Vendor))
+            {
+                vendor = new Vendor
+                {
+                    Id = Guid.NewGuid(),
+                    OwnerUserId = user.Id,
+                    BusinessName = $"{user.FirstName}'s Store",
+                    Slug = $"{user.FirstName.ToLowerInvariant()}-{Guid.NewGuid().ToString("N")[..6]}",
+                    ContactEmail = user.Email,
+                    Status = VendorStatus.Approved,
+                    CommissionRate = 0.10m
+                };
+                _dbContext.Vendors.Add(vendor);
+                user.VendorId = vendor.Id;
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+
         if (vendor == null)
         {
             return Result.Failure<VendorDto>(Error.NotFound("Vendor.NotFound", "Vendor for user not found."));

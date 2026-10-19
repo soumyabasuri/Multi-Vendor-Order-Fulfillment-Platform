@@ -27,7 +27,7 @@ public class FulfillmentController : BaseApiController
         var vendorIdClaim = User.FindFirstValue("vendorId");
         if (!Guid.TryParse(vendorIdClaim, out var vendorId))
         {
-            return Forbid("User is not associated with an approved vendor.");
+            return Forbidden("User is not associated with an approved vendor.");
         }
 
         var result = await _fulfillmentService.CreateShipmentAsync(vendorId, request, ct);

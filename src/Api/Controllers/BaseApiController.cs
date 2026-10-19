@@ -46,4 +46,10 @@ public abstract class BaseApiController : ControllerBase
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)
         };
     }
+
+    protected IActionResult Forbidden(string message, string errorCode = "Forbidden")
+    {
+        var response = ApiResponse<object?>.Fail(errorCode, message, CorrelationId);
+        return StatusCode(StatusCodes.Status403Forbidden, response);
+    }
 }

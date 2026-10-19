@@ -4,6 +4,7 @@ using MultiVendorPlatform.Modules.Common.Results;
 using MultiVendorPlatform.Modules.Identity.Domain;
 using MultiVendorPlatform.Modules.Identity.DTOs;
 using MultiVendorPlatform.Modules.Identity.Security;
+using MultiVendorPlatform.Modules.Vendors.Domain;
 
 namespace MultiVendorPlatform.Modules.Identity.Services;
 
@@ -61,6 +62,23 @@ public class IdentityService : IIdentityService
 
         user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
 
+        // Auto-provision an approved vendor profile if registering as a Vendor
+        if (role.Name == Role.Vendor && user.VendorId == null)
+        {
+            var vendor = new Vendor
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = user.Id,
+                BusinessName = $"{user.FirstName}'s Store",
+                Slug = $"{user.FirstName.ToLowerInvariant()}-{Guid.NewGuid().ToString("N")[..6]}",
+                ContactEmail = user.Email,
+                Status = VendorStatus.Approved,
+                CommissionRate = 0.10m
+            };
+            _dbContext.Vendors.Add(vendor);
+            user.VendorId = vendor.Id;
+        }
+
         var refreshToken = _jwtTokenService.GenerateRefreshToken(user.Id, ipAddress);
         user.RefreshTokens.Add(refreshToken);
 
@@ -101,6 +119,32 @@ public class IdentityService : IIdentityService
         }
 
         var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+
+        if (user.VendorId == null && roles.Contains(Role.Vendor))
+        {
+            var vendor = await _dbContext.Vendors.FirstOrDefaultAsync(v => v.OwnerUserId == user.Id, ct);
+            if (vendor == null)
+            {
+                vendor = new Vendor
+                {
+                    Id = Guid.NewGuid(),
+                    OwnerUserId = user.Id,
+                    BusinessName = $"{user.FirstName}'s Store",
+                    Slug = $"{user.FirstName.ToLowerInvariant()}-{Guid.NewGuid().ToString("N")[..6]}",
+                    ContactEmail = user.Email,
+                    Status = VendorStatus.Approved,
+                    CommissionRate = 0.10m
+                };
+                _dbContext.Vendors.Add(vendor);
+            }
+            else if (vendor.Status != VendorStatus.Approved)
+            {
+                vendor.Status = VendorStatus.Approved;
+            }
+            user.VendorId = vendor.Id;
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
         var (accessToken, expiresAtUtc) = _jwtTokenService.GenerateAccessToken(user, roles);
 
         var refreshToken = _jwtTokenService.GenerateRefreshToken(user.Id, ipAddress);
